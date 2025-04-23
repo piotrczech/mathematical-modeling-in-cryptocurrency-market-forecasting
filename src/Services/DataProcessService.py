@@ -2,9 +2,10 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 class DataProcessService:
-    def __init__(self, sequence_length: int, test_days: int):
+    def __init__(self, sequence_length: int, test_days = 0.1, validation_days = 0.1):
         self.sequence_length = sequence_length
         self.test_days = test_days
+        self.validation_days = validation_days
 
     def create_sequences(self, df) -> tuple[np.ndarray, np.ndarray]:
         df_copy = df.drop(columns=['date'])
@@ -22,9 +23,10 @@ class DataProcessService:
         return X_full, y_full
 
     def split_data(self, X_full: np.ndarray, y_full: np.ndarray):
-        X_temp, X_test = X_full[:-(self.test_days + 1)], X_full[-(self.test_days + 1):]
-        y_temp, y_test = y_full[:-(self.test_days + 1)], y_full[-(self.test_days + 1):]
-        
-        X_val, X_train, y_val, y_train = train_test_split(X_temp, y_temp, test_size=0.9, shuffle=True)
+        """
+        Dzieli dane na zbiory treningowy, walidacyjny i testowy.
+        """
+        X_temp, X_test, y_temp, y_test = train_test_split(X_full, y_full, test_size=self.test_days, shuffle=False)
+        X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=self.validation_days, shuffle=False)
         
         return X_train, y_train, X_val, y_val, X_test, y_test
