@@ -1,32 +1,64 @@
 import numpy as np
-from sklearn.model_selection import train_test_split
+import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit
 
 class DataProcessService:
-    def __init__(self, sequence_length: int, test_days = 0.1, validation_days = 0.1):
+    def __init__(
+        self,
+        sequence_length: int,
+        test_days: int = 90,
+        n_splits: int = 5,
+    ):
         self.sequence_length = sequence_length
         self.test_days = test_days
-        self.validation_days = validation_days
+        self.n_splits = n_splits
 
-    def create_sequences(self, df) -> tuple[np.ndarray, np.ndarray]:
+    def create_sequences(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        df['date'] = pd.to_datetime(df['date'])
+        dates = df['date'].values
         df_copy = df.drop(columns=['date'])
 
-        n_samples = len(df_copy) - self.sequence_length
+        max_valid_idx = len(df_copy) - self.sequence_length - 1  # Predict only 1 day ahead
         n_features = df_copy.shape[1]
 
-        X_full = np.zeros((n_samples, self.sequence_length, n_features), dtype=np.float64)
-        y_full = np.zeros((n_samples, 3), dtype=np.float64)
+        X_full = np.zeros((max_valid_idx, self.sequence_length, n_features), dtype=np.float64)
+        y_full = np.zeros((max_valid_idx, 2), dtype=np.float64)  # Predicting [high, low]
+        full_dates = np.zeros(max_valid_idx, dtype=object)
 
-        for i in range(n_samples):
-            X_full[i] = df_copy.iloc[i : i+self.sequence_length].values
-            y_full[i] = df_copy.iloc[i+self.sequence_length][['high', 'low', 'close']].values
-        
-        return X_full, y_full
+        for i in range(max_valid_idx):
+            X_full[i] = df_copy.iloc[i : i + self.sequence_length].values
+            prediction_idx = i + self.sequence_length
+            y_full[i, 0] = df_copy.iloc[prediction_idx]['high']
+            y_full[i, 1] = df_copy.iloc[prediction_idx]['low']
+            full_dates[i] = dates[prediction_idx]
 
-    def split_data(self, X_full: np.ndarray, y_full: np.ndarray):
+        return X_full, y_full, full_dates
+
+    def split_data(
+        self,
+        X_full: np.ndarray,
+        y_full: np.ndarray,
+        full_dates: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        X_test = X_full[-self.test_days:]
+        y_test = y_full[-self.test_days:]
+        dates_test = full_dates[-self.test_days:]
+
+        X_trainval = X_full[:-self.test_days]
+        y_trainval = y_full[:-self.test_days]
+        dates_trainval = full_dates[:-self.test_days]
+
+        return X_trainval, y_trainval, dates_trainval, X_test, y_test, dates_test
+
+    def get_time_series_cv_splits(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Dzieli dane na zbiory treningowy, walidacyjny i testowy.
+        Generator yielding (X_train, y_train, X_val, y_val) splits using TimeSeriesSplit.
+        Ensures temporal consistency and avoids data leakage.
         """
-        X_temp, X_test, y_temp, y_test = train_test_split(X_full, y_full, test_size=self.test_days, shuffle=False)
-        X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=self.validation_days, shuffle=False)
-        
-        return X_train, y_train, X_val, y_val, X_test, y_test
+        tss = TimeSeriesSplit(n_splits=self.n_splits, gap=1)
+        for train_idx, val_idx in tss.split(X):
+            X_train, y_train = X[train_idx], y[train_idx]
+            X_val, y_val = X[val_idx], y[val_idx]
+            yield X_train, y_train, X_val, y_val

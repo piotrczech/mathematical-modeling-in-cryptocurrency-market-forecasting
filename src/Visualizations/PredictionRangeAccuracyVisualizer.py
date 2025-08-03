@@ -4,16 +4,20 @@ from matplotlib.patches import Rectangle
 
 class PredictionVisualizationService:
     def __init__(self, y_test, predictions):
-        self.y_test = y_test
-        self.predictions = predictions
+        if y_test.shape != predictions.shape:
+            min_shape = min(y_test.shape[0], predictions.shape[0])
+            self.y_test = y_test[:min_shape]
+            self.predictions = predictions[:min_shape]
+        else:
+            self.y_test = y_test
+            self.predictions = predictions
 
-    def visualize(self):
+    def visualize(self, title="Zakresy trafione vs nietrafione – szczegółowe prostokąty"):
         n_points = len(self.y_test)
         x_main = np.arange(n_points)
 
         real_high = self.y_test[:, 0]
         real_low = self.y_test[:, 1]
-        real_close = self.y_test[:, 2]
         pred_high = self.predictions[:, 0]
         pred_low = self.predictions[:, 1]
 
@@ -24,8 +28,6 @@ class PredictionVisualizationService:
 
         ax.plot(x_main, pred_high, label='Przewidywane high', color='red', alpha=0.6)
         ax.plot(x_main, pred_low, label='Przewidywane low', color='red', linestyle='--', alpha=0.6)
-
-        ax.plot(x_main, real_close, label='Rzeczywiste close', color='black', linewidth=2, alpha=0.5)
 
         # Parametr: liczba podziałów dla każdego przedziału między punktami.
         res = 20  # im wyższa wartość, tym więcej małych prostokątów
@@ -79,7 +81,7 @@ class PredictionVisualizationService:
                     )
                     ax.add_patch(rect_red)
 
-        ax.set_title("Zakresy trafione vs nietrafione – szczegółowe prostokąty")
+        ax.set_title(title)
         ax.set_xlabel("Indeks próbki (czas)")
         ax.set_ylabel("Wartość")
         ax.legend()
