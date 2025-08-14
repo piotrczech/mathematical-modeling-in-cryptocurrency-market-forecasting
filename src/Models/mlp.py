@@ -20,7 +20,7 @@ class MLPModel(BaseModel):
             model.add(keras.layers.Activation(hparams['activation']))
             model.add(keras.layers.Dropout(hparams['dropout_rate']))
 
-        model.add(keras.layers.Dense(2))
+        model.add(keras.layers.Dense(2, activation=None))
 
         optimizer = keras.optimizers.get(hparams['optimizer'])
         optimizer.learning_rate = hparams['lr']

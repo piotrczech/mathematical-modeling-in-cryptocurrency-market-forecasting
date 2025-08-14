@@ -1,4 +1,3 @@
-import os
 import time
 from pathlib import Path
 from rich.console import Console
@@ -7,12 +6,18 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.prompt import Prompt, Confirm
 
-# Stałe dla opcji menu
+
+ACTION_BACK = '0'
+
+# Main menu
 ACTION_SEARCH_TRAIN = 'a'
 ACTION_SEARCH_SAVE = 'b'
 ACTION_LOAD_TRAIN = 'c'
 ACTION_LOAD_PREDICT = 'd'
-ACTION_BACK = 'e'
+
+# Model menu
+ACTION_CHOICE_MODEL_MLP = '1'
+ACTION_CHOICE_MODEL_LSTM = '2'
 
 console = Console()
 
@@ -35,26 +40,23 @@ def show_welcome():
     console.print(panel)
 
 def show_model_choice_menu():
-    menu_text = """
-1. MLP (Multi-Layer Perceptron)
-2. ResMLP (Residual Multi-Layer Perceptron)
-3. LSTM (Long Short-Term Memory)
-4. Back
+    menu_text = f"""
+{ACTION_CHOICE_MODEL_MLP}. MLP (Multi-Layer Perceptron)
+{ACTION_CHOICE_MODEL_LSTM}. LSTM (Long Short-Term Memory)
+{ACTION_BACK}. Back
     """
     panel = Panel(menu_text, title="Select Model Structure", border_style="green")
     console.print(panel)
 
 def get_model_choice() -> str:
     while True:
-        choice = Prompt.ask("[bold green]Choice (1-4)[/bold green]", choices=["1", "2", "3", "4"], show_choices=False)
-        if choice == "1":
-            return "mlp"
-        elif choice == "2":
-            return "res_mlp"
-        elif choice == "3":
-            return "lstm"
-        elif choice == "4":
+        choice = Prompt.ask("[bold green]Choice (0-2)[/bold green]", choices=[ACTION_CHOICE_MODEL_MLP, ACTION_CHOICE_MODEL_LSTM, ACTION_BACK], show_choices=False)
+        if choice == ACTION_BACK:
             return "exit"
+        elif choice == ACTION_CHOICE_MODEL_MLP:
+            return "mlp"
+        elif choice == ACTION_CHOICE_MODEL_LSTM:
+            return "lstm"
         console.print("[red]Invalid choice.[/red]")
 
 def show_action_menu():
@@ -70,7 +72,7 @@ def show_action_menu():
 
 def get_action_choice() -> str:
     while True:
-        choice = Prompt.ask("[bold green]Choice (a-e)[/bold green]", choices=[ACTION_SEARCH_TRAIN, ACTION_SEARCH_SAVE, ACTION_LOAD_TRAIN, ACTION_LOAD_PREDICT, ACTION_BACK], show_choices=False).lower()
+        choice = Prompt.ask("[bold green]Choice (a-d or 0)[/bold green]", choices=[ACTION_SEARCH_TRAIN, ACTION_SEARCH_SAVE, ACTION_LOAD_TRAIN, ACTION_LOAD_PREDICT, ACTION_BACK], show_choices=False).lower()
         if choice in [ACTION_SEARCH_TRAIN, ACTION_SEARCH_SAVE, ACTION_LOAD_TRAIN, ACTION_LOAD_PREDICT, ACTION_BACK]:
             return choice
         console.print("[red]Invalid choice.[/red]")

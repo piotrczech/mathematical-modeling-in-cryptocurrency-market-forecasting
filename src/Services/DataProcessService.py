@@ -21,8 +21,8 @@ class DataProcessService:
         max_valid_idx = len(df_copy) - self.sequence_length - 1  # Predict only 1 day ahead
         n_features = df_copy.shape[1]
 
-        X_full = np.zeros((max_valid_idx, self.sequence_length, n_features), dtype=np.float64)
-        y_full = np.zeros((max_valid_idx, 2), dtype=np.float64)  # Predicting [high, low]
+        X_full = np.zeros((max_valid_idx, self.sequence_length, n_features), dtype=np.float32)
+        y_full = np.zeros((max_valid_idx, 2), dtype=np.float32)  # Predicting [high, low]
         full_dates = np.zeros(max_valid_idx, dtype=object)
 
         for i in range(max_valid_idx):
@@ -38,17 +38,15 @@ class DataProcessService:
         self,
         X_full: np.ndarray,
         y_full: np.ndarray,
-        full_dates: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        full_dates: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         X_test = X_full[-self.test_days:]
         y_test = y_full[-self.test_days:]
-        dates_test = full_dates[-self.test_days:]
 
         X_trainval = X_full[:-self.test_days]
         y_trainval = y_full[:-self.test_days]
-        dates_trainval = full_dates[:-self.test_days]
 
-        return X_trainval, y_trainval, dates_trainval, X_test, y_test, dates_test
+        return X_trainval, y_trainval, X_test, y_test
 
     def get_time_series_cv_splits(
         self, X: np.ndarray, y: np.ndarray
