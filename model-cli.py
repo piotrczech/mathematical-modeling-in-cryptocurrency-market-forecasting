@@ -3,7 +3,7 @@ import time
 import numpy as np
 from tensorflow import keras
 from src.Preprocessing import RobustFeatureScaler, TargetScaler
-from src.Services import DataProcessService, LoadDataFrameService, HyperparameterOptimizationService, ConsoleService
+from src.Services import DataProcessService, LoadDataFrameService, HyperparameterOptimizationService, ConsoleService, MetricsService
 from src.Visualizations.LearningCurveVisualizer import LearningCurveVisualizer
 from src.Visualizations.PredictionRangeAccuracyVisualizer import PredictionVisualizationService
 from src.Visualizations.PredictionRangeEvaluatorVisualizer import PredictionRangeEvaluatorVisualizer
@@ -13,8 +13,8 @@ from src.Models.base_stochastic_model import StochasticModule
 from tensorflow.keras import losses as keras_losses
 
 # Default configurations
-SEQUENCE_LENGTH = 30
-TEST_DAYS = 90
+SEQUENCE_LENGTH = 7
+TEST_DAYS = 30
 DATA_PATH = 'assets/crypto-data.csv'
 MODELS_DIR = os.path.join("assets", "models")
 
@@ -69,16 +69,28 @@ def get_model_save_path(action: str) -> str:
     )
     return f"{MODELS_DIR}/{model_name}.keras"
 
-def train_model(model, X_train, y_train, X_val=None, y_val=None, checkpoint_path=None, epochs=None):
+def train_model(model, X_train, y_train, X_val=None, y_val=None, checkpoint_path=None, epochs=None, y_scaler=None, loss_function="huber"):
     ConsoleService.display_message("Final training of the model...")
+    
+    # Przekompiluj model z właściwą funkcją straty
+    loss_fn = keras_losses.get(loss_function)
+    model.compile(
+        optimizer=model.optimizer,
+        loss=loss_fn,
+        metrics=['mae']  # Użyj prostych metryk zamiast kopiowania
+    )
+    
     callbacks = []
 
     if ConsoleService.Prompt.ask("Do you want to use early stopping?", choices=["y", "n"], default="y") == "y":
         patience = ConsoleService.IntPrompt.ask("Enter patience for early stopping", default=50)
-        callbacks.append(keras.callbacks.EarlyStopping(patience=patience, restore_best_weights=True, monitor='val_loss', verbose=1))
+        # Użyj val_loss jeśli są dane walidacyjne, w przeciwnym razie loss
+        monitor_metric = 'val_loss' if X_val is not None else 'loss'
+        callbacks.append(keras.callbacks.EarlyStopping(patience=patience, restore_best_weights=True, monitor=monitor_metric, verbose=1))
     
     if ConsoleService.Prompt.ask("Do you want to use model checkpointing?", choices=["y", "n"], default="n") == "y":
-        callbacks.append(keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss'))
+        monitor_metric = 'val_loss' if X_val is not None else 'loss'
+        callbacks.append(keras.callbacks.ModelCheckpoint(checkpoint_path, monitor=monitor_metric))
 
     start_time = time.time()
     history = model.fit(
@@ -117,13 +129,16 @@ def evaluate_model(model, X_test, y_test, y_scaler=None, is_prediction_only=Fals
         predictions_inv = predictions
         y_test_inv = y_test
 
+    metrics = MetricsService.calculate_metrics(y_test, predictions, y_scaler)
+    ConsoleService.display_metrics_table(metrics)
+
     visualizer = PredictionVisualizationService(y_test_inv, predictions_inv)
     visualizer.visualize()
+
     evaluator = PredictionRangeEvaluatorVisualizer(y_test_inv, predictions_inv)
-    evaluator.print_summary()
     evaluator.plot_range_accuracy()
 
-def summarize_training_history(history, training_time=None):
+def summarize_training_history(history, training_time=None, training_data=None, loss_function="huber"):
     train_losses = history.history.get("loss", [])
     val_losses = history.history.get("val_loss", [])
     
@@ -146,7 +161,13 @@ def summarize_training_history(history, training_time=None):
     ConsoleService.console.print(table)
 
     try:
-        LearningCurveVisualizer(history).visualize()
+        # Użyj enhanced visualizera
+        visualizer = LearningCurveVisualizer.create_enhanced_visualizer(
+            history=history,
+            loss_function_name=loss_function,
+            training_data=training_data
+        )
+        visualizer.visualize()
     except Exception as e:
         ConsoleService.display_message(f"Failed to generate learning curve: {e}", style="red")
 
@@ -247,11 +268,25 @@ def main():
                 "[bold green]EPOCHS[/bold green] (Number of epochs for model training)",
                 default=str(100)
             ))
+            
+            # Pytaj o funkcję straty do użycia podczas treningu
+            train_loss_method = ConsoleService.Prompt.ask(
+                "[bold green]LOSS_METHOD[/bold green] (Loss function to use for training, e.g., 'huber', 'mse')",
+                default="huber"
+            )
 
             checkpoint_path = get_model_save_path(action)
             X_tr_s, y_tr_s, X_te_s, y_te_s, _, y_scaler = scale_for_training(X_trainval, y_trainval, X_test, y_test)
-            history, training_time = train_model(model, X_tr_s, y_tr_s, checkpoint_path=checkpoint_path, epochs=train_epochs)
-            summarize_training_history(history, training_time)
+            history, training_time = train_model(model, X_tr_s, y_tr_s, checkpoint_path=checkpoint_path, epochs=train_epochs, y_scaler=y_scaler, loss_function=train_loss_method)
+            
+            # Przygotuj dane do visualizera
+            training_data = {
+                'X_val': X_te_s,  # Użyj test jako aproksymację walidacji
+                'y_val': y_te_s,
+                'y_scaler': y_scaler,
+                'model': model
+            }
+            summarize_training_history(history, training_time, training_data, train_loss_method)
             
             # Evaluate
             X_pred = X_te_s
@@ -266,8 +301,16 @@ def main():
         else:
             checkpoint_path = get_model_save_path(action)
             X_tr_s, y_tr_s, X_te_s, y_te_s, _, y_scaler = scale_for_training(X_trainval, y_trainval, X_test, y_test)
-            history, training_time = train_model(model, X_tr_s, y_tr_s, checkpoint_path=checkpoint_path, epochs=final_epochs)
-            summarize_training_history(history, training_time)
+            history, training_time = train_model(model, X_tr_s, y_tr_s, checkpoint_path=checkpoint_path, epochs=final_epochs, y_scaler=y_scaler, loss_function=loss_method)
+            
+            # Przygotuj dane do visualizera
+            training_data = {
+                'X_val': X_te_s,
+                'y_val': y_te_s,
+                'y_scaler': y_scaler,
+                'model': model
+            }
+            summarize_training_history(history, training_time, training_data, loss_method)
             
             # Evaluate
             X_pred = X_te_s

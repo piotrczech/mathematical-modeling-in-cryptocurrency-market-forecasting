@@ -6,10 +6,11 @@ import keras.backend
 import numpy as np
 from tensorflow.keras import losses as keras_losses
 from rich.table import Table
-from rich.console import Console
 from tensorflow import keras
 import tensorflow as tf
 from src.Preprocessing import RobustFeatureScaler, TargetScaler
+from src.Services.MetricsService import MetricsService
+from src.Services.ConsoleService import display_table, display_metrics_table
 
 class HyperparameterOptimizationService:
     def __init__(self, X, y, build_model: callable, loss_function: callable, n_splits: int = 3):
@@ -23,8 +24,9 @@ class HyperparameterOptimizationService:
     def objective(self, hparams):
         """Objective function for hyperopt: evaluates hyperparameters using cross-validation with proper scaling."""
         tss = TimeSeriesSplit(n_splits=self.n_splits, gap=1)
+        hparams['loss_method'] = self.loss_function.__name__
         val_losses = []
-
+        all_original_metrics = {'MSE': [], 'MAE': [], 'RMSE': [], 'MAPE': [], 'HUBER': []}
 
         print(f'\nEvaluating hyperparameters: {json.dumps(hparams, indent=2)}\n')
         start_time = time.time()
@@ -37,12 +39,10 @@ class HyperparameterOptimizationService:
             assert len(X_tr.shape) == 3, f'X_tr must be 3D, got {X_tr.shape}'
             assert len(y_tr.shape) == 2, f'y_tr must be 2D, got {y_tr.shape}'
 
-            # Bez wycieku: osobna instancja skalera per fold, fit tylko na train
             x_scaler = RobustFeatureScaler().fit(X_tr)
             X_tr = x_scaler.transform(X_tr)
             X_val = x_scaler.transform(X_val)
 
-            # Skaluj także y (per fold, bez wycieku)
             y_scaler = TargetScaler().fit(y_tr)
             y_tr = y_scaler.transform(y_tr)
             y_val = y_scaler.transform(y_val)
@@ -52,7 +52,6 @@ class HyperparameterOptimizationService:
             # Train
             callbacks = [
                 keras.callbacks.EarlyStopping(patience=round(hparams['epochs']/4), restore_best_weights=True, monitor='val_loss'),
-                keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=round(hparams['epochs']/4), monitor='val_loss'),
             ]
             model.fit(
                 X_tr,
@@ -78,19 +77,33 @@ class HyperparameterOptimizationService:
             else:
                 val_loss = float(eval_result if np.isscalar(eval_result) else eval_result[0])
 
+            y_pred = model.predict(X_val, batch_size=hparams['batch_size'], verbose=0)
+            original_scale_metrics = MetricsService.calculate_metrics(y_val, y_pred, y_scaler)
+            for metric_name in all_original_metrics:
+                all_original_metrics[metric_name].append(original_scale_metrics[metric_name])
+            
             val_losses.append(val_loss)
-            print(f'Fold {fold_idx+1}/{self.n_splits} val_loss: {val_loss}')
+            
+            print(f"Fold {fold_idx+1}/{self.n_splits} - Val Loss (scaled): {val_loss:.6f}")
 
-            # Do not clear session here to avoid invalidating TF function caches each fold
             del model
 
         # Clear session once per trial to free memory without excessive retracing
         keras.backend.clear_session()
 
         mean_loss = np.mean(val_losses)
-        print(f'Mean val_loss for this trial: {mean_loss}')
-        print(f'Time taken: {time.time() - start_time:.2f} seconds = +-{round((time.time() - start_time) / 60)} minutes')
-        print('\n')
+        
+        mean_original_metrics = {
+            metric_name: np.mean(values) for metric_name, values in all_original_metrics.items()
+        }
+        
+        print(f"Summary of trial")
+        print(f"Time taken: {time.time() - start_time:.2f}s (~{round((time.time() - start_time) / 60)}min)")
+        display_metrics_table(
+            mean_original_metrics,
+            title="Average metrics (original scale)"
+        )
+        print() 
 
         return {
             'status': STATUS_OK,
@@ -112,8 +125,17 @@ class HyperparameterOptimizationService:
         best_trial_idx = np.argmin([t['result']['loss'] for t in trials.trials])
         best_trial = trials.trials[best_trial_idx]
         
-        console = Console()
-        console.print("Hyperparameter optimization ended:")
-        console.print(f"Best mean loss: {best_trial['result']['loss']:.4f}")
+        # Wyświetl finalne podsumowanie optymalizacji w ładnej tabeli
+        final_summary_rows = [
+            ["Best Trial", f"#{best_trial_idx + 1}"],
+            ["Best Mean Loss (scaled)", f"{best_trial['result']['loss']:.6f}"],
+            ["Total Evaluations", f"{len(trials.trials)}"]
+        ]
+        
+        display_table(
+            title="Final results",
+            columns=["Parameter", "Value"],
+            rows=final_summary_rows
+        )
 
         return space_eval(space, best), trials

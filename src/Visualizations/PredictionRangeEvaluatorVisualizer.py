@@ -61,17 +61,6 @@ class PredictionRangeEvaluatorVisualizer:
             'avg_deviation_below': deviation_below
         }
     
-    def print_summary(self):
-        """Wyświetla podsumowanie oceny predykcji"""
-        print(f"Dokładność predykcji zakresu: {self.results['accuracy_percent']:.2f}%")
-        print(f"MAE dla high: {self.results['mae_high']:.2f}")
-        print(f"MAE dla low: {self.results['mae_low']:.2f}")
-        print(f"Średnia szerokość zakresu: {self.results['average_range_width']:.2f}")
-        print(f"Liczba przypadków powyżej high: {self.results['count_above_high']}")
-        print(f"Liczba przypadków poniżej low: {self.results['count_below_low']}")
-        print(f"Średnie odchylenie powyżej high: {self.results['avg_deviation_above']:.2f}")
-        print(f"Średnie odchylenie poniżej low: {self.results['avg_deviation_below']:.2f}")
-    
     def plot_range_accuracy(self):
         """Wizualizuje dokładność predykcji zakresu"""
         real_high = self.y_test[:, 0]

@@ -130,4 +130,24 @@ def display_table(title: str, columns: list, rows: list):
         table.add_column(col)
     for row in rows:
         table.add_row(*row)
-    console.print(table) 
+    console.print(table)
+
+def display_metrics_table(metrics: dict, title: str = "📊 Metryki błędów (oryginalna skala)"):
+    """Wyświetla metryki błędów w ładnej tabeli."""
+    import numpy as np
+    
+    metrics_rows = []
+    for metric_name, value in metrics.items():
+        if np.isinf(value):
+            metrics_rows.append([metric_name, "N/A (podział przez zero)"])
+        else:
+            if metric_name == "MAPE":
+                metrics_rows.append([metric_name, f"{value:.2f}%"])
+            else:
+                metrics_rows.append([metric_name, f"{value:.4f}"])
+    
+    display_table(
+        title=title,
+        columns=["Metryka", "Wartość"],
+        rows=metrics_rows
+    ) 
