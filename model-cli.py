@@ -8,7 +8,8 @@ from src.Visualizations.LearningCurveVisualizer import LearningCurveVisualizer
 from src.Visualizations.PredictionRangeAccuracyVisualizer import PredictionVisualizationService
 from src.Visualizations.PredictionRangeEvaluatorVisualizer import PredictionRangeEvaluatorVisualizer
 from rich.table import Table
-from src.Models import MLPModel, LSTMModel
+from src.Models import MLPModel, LSTMModel, MLPStochasticModel, LSTMStochasticModel
+from src.Models.base_stochastic_model import StochasticModule
 from tensorflow.keras import losses as keras_losses
 
 # Default configurations
@@ -70,10 +71,15 @@ def get_model_save_path(action: str) -> str:
 
 def train_model(model, X_train, y_train, X_val=None, y_val=None, checkpoint_path=None, epochs=None):
     ConsoleService.display_message("Final training of the model...")
-    callbacks = [
-        # keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss'),
-        # keras.callbacks.EarlyStopping(patience=500, restore_best_weights=True, monitor='val_loss'),
-    ]
+    callbacks = []
+
+    if ConsoleService.Prompt.ask("Do you want to use early stopping?", choices=["y", "n"], default="y") == "y":
+        patience = ConsoleService.IntPrompt.ask("Enter patience for early stopping", default=50)
+        callbacks.append(keras.callbacks.EarlyStopping(patience=patience, restore_best_weights=True, monitor='val_loss', verbose=1))
+    
+    if ConsoleService.Prompt.ask("Do you want to use model checkpointing?", choices=["y", "n"], default="n") == "y":
+        callbacks.append(keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss'))
+
     start_time = time.time()
     history = model.fit(
         X_train, y_train,
@@ -191,6 +197,12 @@ def main():
             elif model_type == "lstm":
                 model = LSTMModel(sequence_length=SEQUENCE_LENGTH)
                 space = model.get_space(epochs=hyperopt_epochs, loss_method=loss_method)
+            elif model_type == "mlp_stochastic":
+                model = MLPStochasticModel(sequence_length=SEQUENCE_LENGTH)
+                space = model.get_space(epochs=hyperopt_epochs, loss_method=loss_method)
+            elif model_type == "lstm_stochastic":
+                model = LSTMStochasticModel(sequence_length=SEQUENCE_LENGTH)
+                space = model.get_space(epochs=hyperopt_epochs, loss_method=loss_method)
         
         ConsoleService.clear_console()
         
@@ -214,12 +226,21 @@ def main():
                 ConsoleService.display_message("Model file not found.", style="red")
                 ConsoleService.Prompt.ask("Press enter to return to main menu")
                 continue
-            model = keras.models.load_model(checkpoint_path)
+            model = keras.models.load_model(checkpoint_path, custom_objects={"StochasticModule": StochasticModule})
         
         if action == ConsoleService.ACTION_LOAD_PREDICT:
             # Only predict – dopasuj skalery na trainval i użyj do skalowania testu oraz odskalowania predykcji
-            _, _, X_test_s, y_test_s, _, y_scaler = scale_for_training(X_trainval, y_trainval, X_test, y_test)
-            evaluate_model(model, X_test_s, y_test_s, y_scaler=y_scaler, is_prediction_only=True)
+            X_tr_s, y_tr_s, X_te_s, y_te_s, _, y_scaler = scale_for_training(X_trainval, y_trainval, X_test, y_test)
+
+            X_pred = X_te_s
+            y_pred = y_te_s
+            
+            if ConsoleService.Prompt.ask("Do you want to add days of training data for prediction?", choices=["y", "n"], default="y") == "y":
+                days = ConsoleService.IntPrompt.ask("Enter number of days to add", default=90)
+                X_pred = np.concatenate([X_tr_s[-days:], X_te_s], axis=0)
+                y_pred = np.concatenate([y_tr_s[-days:], y_te_s], axis=0)
+
+            evaluate_model(model, X_pred, y_pred, y_scaler=y_scaler, is_prediction_only=True)
         elif action == ConsoleService.ACTION_LOAD_TRAIN:
             # Train
             train_epochs = int(ConsoleService.Prompt.ask(
@@ -233,7 +254,15 @@ def main():
             summarize_training_history(history, training_time)
             
             # Evaluate
-            evaluate_model(model, X_te_s, y_te_s, y_scaler=y_scaler)
+            X_pred = X_te_s
+            y_pred = y_te_s
+
+            if ConsoleService.Prompt.ask("Do you want to add days of training data for prediction?", choices=["y", "n"], default="y") == "y":
+                days = ConsoleService.IntPrompt.ask("Enter number of days to add", default=90)
+                X_pred = np.concatenate([X_tr_s[-days:], X_te_s], axis=0)
+                y_pred = np.concatenate([y_tr_s[-days:], y_te_s], axis=0)
+
+            evaluate_model(model, X_pred, y_pred, y_scaler=y_scaler)
         else:
             checkpoint_path = get_model_save_path(action)
             X_tr_s, y_tr_s, X_te_s, y_te_s, _, y_scaler = scale_for_training(X_trainval, y_trainval, X_test, y_test)
@@ -241,7 +270,15 @@ def main():
             summarize_training_history(history, training_time)
             
             # Evaluate
-            evaluate_model(model, X_te_s, y_te_s, y_scaler=y_scaler)
+            X_pred = X_te_s
+            y_pred = y_te_s
+
+            if ConsoleService.Prompt.ask("Do you want to add days of training data for prediction?", choices=["y", "n"], default="y") == "y":
+                days = ConsoleService.IntPrompt.ask("Enter number of days to add", default=90)
+                X_pred = np.concatenate([X_tr_s[-days:], X_te_s], axis=0)
+                y_pred = np.concatenate([y_tr_s[-days:], y_te_s], axis=0)
+
+            evaluate_model(model, X_pred, y_pred, y_scaler=y_scaler)
         
         ConsoleService.Prompt.ask("Press enter to return to main menu")
 

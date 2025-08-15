@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Prompt, Confirm, IntPrompt
 
 
 ACTION_BACK = '0'
@@ -18,6 +18,8 @@ ACTION_LOAD_PREDICT = 'd'
 # Model menu
 ACTION_CHOICE_MODEL_MLP = '1'
 ACTION_CHOICE_MODEL_LSTM = '2'
+ACTION_CHOICE_MODEL_MLP_STOCH = '3'
+ACTION_CHOICE_MODEL_LSTM_STOCH = '4'
 
 console = Console()
 
@@ -26,23 +28,25 @@ def clear_console():
 
 def show_welcome():
     welcome_text = Text(r"""
-    _______  _______  ______   _______  _        _______  _       _________
-    (       )(  ___  )(  __  \ (  ____ \( \      (  ____ \( \      \__   __/
-    | () () || (   ) || (  \  )| (    \/| (      | (    \/| (         ) (   
-    | || || || |   | || |   ) || (__    | |      | |      | |         | |   
-    | |(_)| || |   | || |   | ||  __)   | |      | |      | |         | |   
-    | |   | || |   | || |   ) || (      | |      | |      | |         | |   
-    | )   ( || (___) || (__/  )| (____/\| (____/\| (____/\| (____/\___) (___
-    |/     \|(_______)(______/ (_______/(_______/(_______/(_______/\_______/
+    _______  _______  ______   _______  _            _______  _       _________
+    (       )(  ___  )(  __  \ (  ____ \( \          (  ____ \( \      \__   __/
+    | () () || (   ) || (  \  )| (    \/| (          | (    \/| (         ) (   
+    | || || || |   | || |   ) || (__    | |          | |      | |         | |   
+    | |(_)| || |   | || |   | ||  __)   | |          | |      | |         | |   
+    | |   | || |   | || |   ) || (      | |          | |      | |         | |   
+    | )   ( || (___) || (__/  )| (____/\| (____/\    | (____/\| (____/\___) (___
+    |/     \|(_______)(______/ (_______/(_______/    (_______/(_______/\_______/
     """, style="bold blue")
     
-    panel = Panel(welcome_text, title="Model CLI - Train and Optimize Crypto Models", border_style="blue")
+    panel = Panel(welcome_text, title="Model CLI", border_style="blue")
     console.print(panel)
 
 def show_model_choice_menu():
     menu_text = f"""
 {ACTION_CHOICE_MODEL_MLP}. MLP (Multi-Layer Perceptron)
 {ACTION_CHOICE_MODEL_LSTM}. LSTM (Long Short-Term Memory)
+{ACTION_CHOICE_MODEL_MLP_STOCH}. MLP-Stochastic (GaussianNoise + MC Dropout)
+{ACTION_CHOICE_MODEL_LSTM_STOCH}. LSTM-Stochastic (GaussianNoise + MC Dropout)
 {ACTION_BACK}. Back
     """
     panel = Panel(menu_text, title="Select Model Structure", border_style="green")
@@ -50,13 +54,17 @@ def show_model_choice_menu():
 
 def get_model_choice() -> str:
     while True:
-        choice = Prompt.ask("[bold green]Choice (0-2)[/bold green]", choices=[ACTION_CHOICE_MODEL_MLP, ACTION_CHOICE_MODEL_LSTM, ACTION_BACK], show_choices=False)
+        choice = Prompt.ask("[bold green]Choice (0-4)[/bold green]", choices=[ACTION_CHOICE_MODEL_MLP, ACTION_CHOICE_MODEL_LSTM, ACTION_CHOICE_MODEL_MLP_STOCH, ACTION_CHOICE_MODEL_LSTM_STOCH, ACTION_BACK], show_choices=False)
         if choice == ACTION_BACK:
             return "exit"
         elif choice == ACTION_CHOICE_MODEL_MLP:
             return "mlp"
         elif choice == ACTION_CHOICE_MODEL_LSTM:
             return "lstm"
+        elif choice == ACTION_CHOICE_MODEL_MLP_STOCH:
+            return "mlp_stochastic"
+        elif choice == ACTION_CHOICE_MODEL_LSTM_STOCH:
+            return "lstm_stochastic"
         console.print("[red]Invalid choice.[/red]")
 
 def show_action_menu():
